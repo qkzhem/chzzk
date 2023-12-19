@@ -1,4 +1,5 @@
 import typing
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -11,79 +12,133 @@ BASE_URL = "https://api.chzzk.naver.com/service/v1/channels/"
 
 
 class BroadcastGuildAlert(commands.GroupCog, name="방송알림"):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: commands.Bot, session: aiohttp.ClientSession) -> None:
         self.bot = bot
+        self.session = session
         self.alert_job.start()
 
-    def cog_unload(self) -> None:
+    async def cog_unload(self) -> None:
         self.alert_job.cancel()
+        return await super().cog_unload()
 
-    @tasks.loop(seconds=10)
+    async def fetch_streamer_info(self, channel_id: str):
+        try:
+            async with self.session.get(f"{BASE_URL}{channel_id}") as streamer_info:
+                streamer_info.raise_for_status()
+                return await streamer_info.json()
+        except aiohttp.ClientResponseError as e:
+            # Handle specific HTTP response errors
+            print(f"Error fetching streamer info: {e}")
+            return None
+        except Exception as e:
+            # Handle other exceptions
+            print(f"Unexpected error fetching streamer info: {e}")
+            return None
+
+    async def fetch_stream_info(self, channel_id: str):
+        try:
+            async with self.session.get(f"{BASE_URL}{channel_id}/live-detail") as streamer_info:
+                streamer_info.raise_for_status()
+                return await streamer_info.json()
+        except aiohttp.ClientResponseError as e:
+            # Handle specific HTTP response errors
+            print(f"Error fetching streamer info: {e}")
+            return None
+        except Exception as e:
+            # Handle other exceptions
+            print(f"Unexpected error fetching streamer info: {e}")
+            return None
+
+    @tasks.loop(minutes=5)
     async def alert_job(self):
-        with DB().getSession() as session:
-            statements = session.query(Guild).filter_by(activated=True).all()
-            for statement in statements:
-                async with self.bot.http_client.get(f"{BASE_URL}{statement.streamer_id}") as streamer_info:
-                    if streamer_info.status != 200:
+        try:
+            with DB().getSession() as session:
+                statements = session.query(
+                    Guild).filter_by(activated=True).all()
+                for statement in statements:
+                    streamer_info = await self.fetch_streamer_info(statement.streamer_id)
+                    streamer_info = streamer_info["content"]
+
+                    if streamer_info["channelId"] is None:
                         continue
-                    _streamer_info = await streamer_info.json()
-                    streamer_info = _streamer_info["content"]
-                    if streamer_info["openLive"] == True:
-                        if statement.alert_text == None:
-                            channel = await self.bot.fetch_channel(
-                                statement.alert_channel)
-                            await channel.send(content=f"{streamer_info['channelName']}님이 방송을 시작하였습니다.")
+
+                    stream_info_data = await self.fetch_stream_info(statement.streamer_id)
+                    stream_info_data = stream_info_data["content"]
+
+                    if streamer_info["openLive"]:
+                        if statement.is_streaming == True:
+                            continue
                         else:
-                            await self.bot.get_guild(statement.guild_id).get_channel(statement.alert_channel).send(content=f"{streamer_info['channelName']}님이 방송을 시작하였습니다.\n{statement.alert_text}")
+                            statement.is_streaming = True
+                            session.commit()
+                            embed = discord.Embed(
+                                title=streamer_info["channelName"], description=streamer_info["channelDescription"], color=0x00ff00)
+                            embed.set_footer(text=statement.streamer_id)
+                            embed.timestamp = discord.utils.utcnow()
+                            embed.set_image(
+                                url=stream_info_data["liveImageUrl"].replace("{type}", "720"))
+                            embed.set_thumbnail(
+                                url=streamer_info["channelImageUrl"])
+                            embed.add_field(
+                                name="시청자 수", value=f"{stream_info_data['concurrentUserCount']}명")
+                            embed.add_field(
+                                name="카테고리", value=f"{'미정' if stream_info_data['liveCategoryValue'] == '' else stream_info_data['liveCategoryValue']}")
+                            channel = await self.bot.fetch_channel(statement.alert_channel)
+                            await channel.send(content=statement.alert_text, embed=embed)
+                            continue
                     else:
-                        continue
+                        if statement.is_streaming == False:
+                            continue
+                        else:
+                            statement.is_streaming = False
+                            session.commit()
+                            continue
+        except Exception as e:
+            print(e.with_traceback())
+            pass
 
     @app_commands.command(name="설정", description="방송 알림을 설정합니다.")
     @app_commands.describe(channel_id="스트리머의 채널 ID", alert_channel="알림을 받을 채널", alert_text="알림과 함께 전송될 메세지")
     async def _check_stream(self, interaction: discord.Interaction,
                             channel_id: str, alert_channel: discord.TextChannel,
                             alert_text: typing.Optional[str]) -> None:
+        streamer_info = await self.fetch_streamer_info(channel_id)
 
-        async with self.bot.http_client.get(
-                f"{BASE_URL}{channel_id}") as streamer_info:
+        if not streamer_info or streamer_info["code"] != 200:
+            await interaction.response.send_message("채널을 찾을 수 없습니다.", ephemeral=True)
+            return
 
-            if streamer_info.status == 404:
-                await interaction.response.send_message("채널을 찾을 수 없습니다.", ephemeral=True)
-                return
-            elif streamer_info.status == 403:
-                await interaction.response.send_message("채널을 찾을 수 없습니다.", ephemeral=True)
-                return
-            elif streamer_info.status == 500:
-                await interaction.response.send_message("치지직 서버 오류입니다.", ephemeral=True)
-                return
-            elif streamer_info.status == 200:
-                _streamer_info = await streamer_info.json()
-                streamer_info = _streamer_info["content"]
-                if streamer_info["channelId"] == None:
-                    await interaction.response.send_message("채널을 찾을 수 없습니다.", ephemeral=True)
-                    return
-                _stream_info_data = await self.bot.http_client.get(
-                    f"{BASE_URL}{channel_id}/live-detail")
-                stream_info_data = await _stream_info_data.json()
+        streamer_info = streamer_info["content"]
+        if streamer_info["channelId"] is None:
+            await interaction.response.send_message("채널을 찾을 수 없습니다.", ephemeral=True)
+            return
 
-                embed = discord.Embed(
-                    title=streamer_info["channelName"], description=streamer_info["channelDescription"], color=0x00ff00)
-                embed.set_footer(text=channel_id)
-                embed.timestamp = discord.utils.utcnow()
-                embed.set_image(
-                    url=stream_info_data["content"]["liveImageUrl"].replace("{type}", "720"))
-                embed.set_thumbnail(url=streamer_info["channelImageUrl"])
-                embed.add_field(
-                    name="시청자 수", value=f"{stream_info_data['content']['concurrentUserCount']}명")
-                embed.add_field(
-                    name="카테고리", value=f"{'미정' if stream_info_data['content']['liveCategoryValue'] == '' else stream_info_data['content']['liveCategoryValue']}")
-                view = StreamAlertCreateConfirm(timeout=10, interaction=interaction,
-                                                channel_id=channel_id, alert_channel=alert_channel, alert_text=alert_text)
+        stream_info_data = await self.fetch_stream_info(channel_id)
+        if not stream_info_data or stream_info_data["code"] != 200:
+            await interaction.response.send_message("치지직 서버 오류입니다.", ephemeral=True)
+            return
 
-                await interaction.response.send_message(content=f"방송 시작이 감지되면 아래와 같이 메세지가 발송됩니다.\n\n{alert_text if alert_text != None else ''}", embed=embed, ephemeral=True, view=view, delete_after=15)
-            else:
-                await interaction.response.send_message(f"오류가 발생 하였습니다.\n오류 코드: {streamer_info.status}", ephemeral=True)
+        stream_info_data = stream_info_data["content"]
+
+        embed = discord.Embed(
+            title=streamer_info["channelName"], description=streamer_info["channelDescription"], color=0x00ff00)
+        embed.set_footer(text=channel_id)
+        embed.timestamp = discord.utils.utcnow()
+        embed.set_image(
+            url=stream_info_data["liveImageUrl"].replace("{type}", "720"))
+        embed.set_thumbnail(url=streamer_info["channelImageUrl"])
+        embed.add_field(
+            name="시청자 수", value=f"{stream_info_data['concurrentUserCount']}명")
+        embed.add_field(
+            name="카테고리", value=f"{'미정' if stream_info_data['liveCategoryValue'] == '' else stream_info_data['liveCategoryValue']}")
+
+        view = StreamAlertCreateConfirm(timeout=10, interaction=interaction,
+                                        channel_id=channel_id, alert_channel=alert_channel, alert_text=alert_text)
+
+        await interaction.response.send_message(content=f"방송 시작이 감지되면 아래와 같이 메세지가 발송됩니다.\n\n{alert_text if alert_text else ''}", embed=embed, ephemeral=True, view=view, delete_after=15)
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(BroadcastGuildAlert(bot))
+    session = aiohttp.ClientSession()
+    cog = BroadcastGuildAlert(bot, session)
+    await bot.add_cog(cog)

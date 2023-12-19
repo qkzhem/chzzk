@@ -11,7 +11,7 @@ class Guild(DB().Base):
     activated = Column(Boolean)
     is_streaming = Column(Boolean)
 
-    def __init__(self, guild_id, streamer_id, alert_channel, alert_text, activated, is_streaming):
+    def __init__(self, guild_id, streamer_id, alert_channel, alert_text, activated, is_streaming=None):
         self.guild_id = guild_id
         self.streamer_id = streamer_id
         self.alert_channel = alert_channel
