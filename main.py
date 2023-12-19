@@ -5,48 +5,27 @@ from pathlib import Path
 import aiohttp
 
 import discord
-from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord.ext.commands import CommandNotFound
-from sqlalchemy import create_engine
-from sqlalchemy.orm import scoped_session, sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
 
 import SECRETS
-
-engine = create_engine("sqlite:///db\\chzzk_data.db", echo=True)
-
-db_session = scoped_session(
-    sessionmaker(
-        autocommit=False,
-        autoflush=False,
-        bind=engine
-    )
-)
-
-
-DB_instance = declarative_base()
-DB_instance.query = db_session.query_property()
-
-
-def init_db():
-    DB_instance.metadata.create_all(bind=engine)
 
 
 class Cheek(commands.AutoShardedBot):
     def __init__(self, **kwargs):
         intent = discord.Intents.default()
         super().__init__(command_prefix="", intents=intent)
-        init_db()
 
         self.remove_command("help")
+
+    @tasks.loop(seconds=5)
+    async def slow_count():
+        print("sans")
 
     async def setup_hook(self):
         self.loop.create_task(self.load_all_extensions())
         self.http_client = aiohttp.ClientSession()
 
-        sans = await aiohttp.ClientSession().get("https://chzzk.naver.com/")
-        
     async def load_all_extensions(self):
         await self.wait_until_ready()
         await asyncio.sleep(1)
@@ -64,7 +43,7 @@ class Cheek(commands.AutoShardedBot):
     async def on_ready(self):
         self.app_info = await self.application_info()
         print('-' * 10)
-        print(f'{self.user.name}로 로그인됨\n'
+        print(f'{self.user.name}(으)로 로그인됨\n'
               f'Discord.py 버전: {discord.__version__}\n'
               f'소유자: {self.app_info.owner}\n'
               f'초대 링크: https://discord.com/oauth2/authorize?client_id={self.user.id}&scope=bot+applications.commands&permissions=274877958144')
