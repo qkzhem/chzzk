@@ -13,12 +13,7 @@ class Cheek(commands.AutoShardedBot):
     def __init__(self, **kwargs):
         intent = discord.Intents.default()
         super().__init__(command_prefix="", intents=intent)
-
         self.remove_command("help")
-
-    @tasks.loop(seconds=5)
-    async def slow_count():
-        print("sans")
 
     async def setup_hook(self):
         self.loop.create_task(self.load_all_extensions())

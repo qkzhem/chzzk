@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
+from discord.ext.commands import has_permissions
 from db.index import DB
 from models.guild import Guild
 from views.stream_alert import StreamAlertCreateConfirm
@@ -97,6 +98,7 @@ class BroadcastGuildAlert(commands.GroupCog, name="방송알림"):
             print(e.with_traceback())
             pass
 
+    @has_permissions(administrator=True)
     @app_commands.command(name="설정", description="방송 알림을 설정합니다.")
     @app_commands.describe(channel_id="스트리머의 채널 ID", alert_channel="알림을 받을 채널", alert_text="알림과 함께 전송될 메세지")
     async def _check_stream(self, interaction: discord.Interaction,
@@ -137,33 +139,70 @@ class BroadcastGuildAlert(commands.GroupCog, name="방송알림"):
 
         await interaction.response.send_message(content=f"방송 시작이 감지되면 아래와 같이 메세지가 발송됩니다.\n\n{alert_text if alert_text else ''}", embed=embed, ephemeral=True, view=view, delete_after=15)
 
-        @app_commands.command(name="끄기", description="방송 알림을 비활성화합니다.")
-        async def _alert_disable(self, interaction: discord.Interaction) -> None:
-            with DB().getSession() as session:
-                statements = session.query(
-                    Guild).filter_by(guild_id=interaction.guild.id).first()
-                if statements == None:
-                    await interaction.response.send_message("방송 알림이 설정되어있지 않습니다.", ephemeral=True)
-                    return
-                else:
-                    statements.activated = False
-                    session.commit()
-                    await interaction.response.send_message("방송 알림을 비활성화하였습니다.", ephemeral=True)
+    @has_permissions(administrator=True)
+    @app_commands.command(name="끄기", description="방송 알림을 비활성화합니다.")
+    async def _alert_disable(self, interaction: discord.Interaction) -> None:
+        with DB().getSession() as session:
+            statements = session.query(
+                Guild).filter_by(guild_id=interaction.guild.id).first()
+            if statements == None:
+                await interaction.response.send_message("방송 알림이 설정되어있지 않습니다.", ephemeral=True)
+                return
+            else:
+                statements.activated = False
+                session.commit()
+                await interaction.response.send_message("방송 알림을 비활성화하였습니다.", ephemeral=True)
+                return
+
+    @has_permissions(administrator=True)
+    @app_commands.command(name="켜기", description="방송 알림을 활성화합니다.")
+    async def _alert_enable(self, interaction: discord.Interaction) -> None:
+        with DB().getSession() as session:
+            statements = session.query(
+                Guild).filter_by(guild_id=interaction.guild.id).first()
+            if statements == None:
+                await interaction.response.send_message("방송 알림이 설정되어있지 않습니다.", ephemeral=True)
+                return
+            else:
+                statements.activated = True
+                session.commit()
+                await interaction.response.send_message("방송 알림을 활성화하였습니다.", ephemeral=True)
+                return
+
+    @has_permissions(administrator=True)
+    @app_commands.command(name="정보", description="방송 알림 정보를 출력합니다.")
+    async def _alert_info(self, interaction: discord.Interaction) -> None:
+        with DB().getSession() as session:
+            statements = session.query(
+                Guild).filter_by(guild_id=interaction.guild.id).first()
+            if statements == None:
+                await interaction.response.send_message("방송 알림이 설정되어있지 않습니다.", ephemeral=True)
+                return
+            else:
+                streamer_info = await self.fetch_streamer_info(statements.streamer_id)
+                streamer_info = streamer_info["content"]
+
+                if streamer_info["channelId"] is None:
+                    await interaction.response.send_message("채널을 찾을 수 없습니다.", ephemeral=True)
                     return
 
-        @app_commands.command(name="켜기", description="방송 알림을 활성화합니다.")
-        async def _alert_enable(self, interaction: discord.Interaction) -> None:
-            with DB().getSession() as session:
-                statements = session.query(
-                    Guild).filter_by(guild_id=interaction.guild.id).first()
-                if statements == None:
-                    await interaction.response.send_message("방송 알림이 설정되어있지 않습니다.", ephemeral=True)
-                    return
-                else:
-                    statements.activated = True
-                    session.commit()
-                    await interaction.response.send_message("방송 알림을 활성화하였습니다.", ephemeral=True)
-                    return
+                stream_info_data = await self.fetch_stream_info(statements.streamer_id)
+                stream_info_data = stream_info_data["content"]
+
+                embed = discord.Embed(
+                    title=streamer_info["channelName"], description=streamer_info["channelDescription"], color=0x00ff00)
+                embed.set_footer(text=statements.streamer_id)
+                embed.timestamp = discord.utils.utcnow()
+                embed.set_image(
+                    url=stream_info_data["liveImageUrl"].replace("{type}", "720"))
+                embed.set_thumbnail(url=streamer_info["channelImageUrl"])
+                embed.add_field(
+                    name="시청자 수", value=f"{stream_info_data['concurrentUserCount']}명")
+                embed.add_field(
+                    name="카테고리", value=f"{'미정' if stream_info_data['liveCategoryValue'] == '' else stream_info_data['liveCategoryValue']}")
+
+                await interaction.response.send_message(content=f"방송 시작이 감지되면 아래와 같이 메세지가 발송됩니다.\n\n{statements.alert_text if statements.alert_text else ''}", embed=embed, ephemeral=True, delete_after=15)
+                return
 
 
 async def setup(bot: commands.Bot) -> None:

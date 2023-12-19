@@ -17,8 +17,6 @@ class StreamAlertCreateConfirm(discord.ui.View):
 
     @discord.ui.button(label="이대로 할레요", style=discord.ButtonStyle.success, custom_id="stream_alert_create_confirm")
     async def _alert_create_confirm(self, interaction: discord.Interaction, confirm_button: discord.ui.Button):
-        data = interaction.data
-        print(data)
         with DB().getSession() as session:
             statements = session.query(Guild).filter_by(
                 guild_id=interaction.guild.id).first()

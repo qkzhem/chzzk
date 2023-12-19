@@ -55,7 +55,7 @@ class Owners(commands.Cog, name="관리자 전용"):
                 print(f'모듈들을 다시 로드하는동안 오류가 발생하였습니다: {error}')
                 reloaded_module += f'``{extension}``, '
                 error += f'{error}\n'
-            print('-' * 10)
+            print('-' * 32)
 
         if failed_module == "":
             await interaction.response.send_message(f"다음 모듈(들)을 성공적으로 다시 로드 하였습니다: {reloaded_module[:-2]}", ephemeral=True)
