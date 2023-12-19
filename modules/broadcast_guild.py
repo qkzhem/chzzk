@@ -137,6 +137,34 @@ class BroadcastGuildAlert(commands.GroupCog, name="방송알림"):
 
         await interaction.response.send_message(content=f"방송 시작이 감지되면 아래와 같이 메세지가 발송됩니다.\n\n{alert_text if alert_text else ''}", embed=embed, ephemeral=True, view=view, delete_after=15)
 
+        @app_commands.command(name="끄기", description="방송 알림을 비활성화합니다.")
+        async def _alert_disable(self, interaction: discord.Interaction) -> None:
+            with DB().getSession() as session:
+                statements = session.query(
+                    Guild).filter_by(guild_id=interaction.guild.id).first()
+                if statements == None:
+                    await interaction.response.send_message("방송 알림이 설정되어있지 않습니다.", ephemeral=True)
+                    return
+                else:
+                    statements.activated = False
+                    session.commit()
+                    await interaction.response.send_message("방송 알림을 비활성화하였습니다.", ephemeral=True)
+                    return
+
+        @app_commands.command(name="켜기", description="방송 알림을 활성화합니다.")
+        async def _alert_enable(self, interaction: discord.Interaction) -> None:
+            with DB().getSession() as session:
+                statements = session.query(
+                    Guild).filter_by(guild_id=interaction.guild.id).first()
+                if statements == None:
+                    await interaction.response.send_message("방송 알림이 설정되어있지 않습니다.", ephemeral=True)
+                    return
+                else:
+                    statements.activated = True
+                    session.commit()
+                    await interaction.response.send_message("방송 알림을 활성화하였습니다.", ephemeral=True)
+                    return
+
 
 async def setup(bot: commands.Bot) -> None:
     session = aiohttp.ClientSession()
