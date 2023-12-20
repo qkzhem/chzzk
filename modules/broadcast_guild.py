@@ -4,7 +4,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
-from discord.ext.commands import has_permissions
 from db.index import DB
 from models.guild import Guild
 from views.stream_alert import StreamAlertCreateConfirm
@@ -98,12 +97,12 @@ class BroadcastGuildAlert(commands.GroupCog, name="방송알림"):
             print(e.with_traceback())
             pass
 
-    @has_permissions(administrator=True)
     @app_commands.command(name="설정", description="방송 알림을 설정합니다.")
     @app_commands.describe(channel_id="스트리머의 채널 ID", alert_channel="알림을 받을 채널", alert_text="알림과 함께 전송될 메세지")
-    async def _check_stream(self, interaction: discord.Interaction,
-                            channel_id: str, alert_channel: discord.TextChannel,
-                            alert_text: typing.Optional[str]) -> None:
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def _set_stream_alert(self, interaction: discord.Interaction,
+                                channel_id: str, alert_channel: discord.TextChannel,
+                                alert_text: typing.Optional[str]) -> None:
         streamer_info = await self.fetch_streamer_info(channel_id)
 
         if not streamer_info or streamer_info["code"] != 200:
@@ -139,8 +138,8 @@ class BroadcastGuildAlert(commands.GroupCog, name="방송알림"):
 
         await interaction.response.send_message(content=f"방송 시작이 감지되면 아래와 같이 메세지가 발송됩니다.\n\n{alert_text if alert_text else ''}", embed=embed, ephemeral=True, view=view, delete_after=15)
 
-    @has_permissions(administrator=True)
     @app_commands.command(name="끄기", description="방송 알림을 비활성화합니다.")
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def _alert_disable(self, interaction: discord.Interaction) -> None:
         with DB().getSession() as session:
             statements = session.query(
@@ -154,8 +153,8 @@ class BroadcastGuildAlert(commands.GroupCog, name="방송알림"):
                 await interaction.response.send_message("방송 알림을 비활성화하였습니다.", ephemeral=True)
                 return
 
-    @has_permissions(administrator=True)
     @app_commands.command(name="켜기", description="방송 알림을 활성화합니다.")
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def _alert_enable(self, interaction: discord.Interaction) -> None:
         with DB().getSession() as session:
             statements = session.query(
@@ -169,8 +168,8 @@ class BroadcastGuildAlert(commands.GroupCog, name="방송알림"):
                 await interaction.response.send_message("방송 알림을 활성화하였습니다.", ephemeral=True)
                 return
 
-    @has_permissions(administrator=True)
     @app_commands.command(name="정보", description="방송 알림 정보를 출력합니다.")
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def _alert_info(self, interaction: discord.Interaction) -> None:
         with DB().getSession() as session:
             statements = session.query(
@@ -203,6 +202,29 @@ class BroadcastGuildAlert(commands.GroupCog, name="방송알림"):
 
                 await interaction.response.send_message(content=f"방송 시작이 감지되면 아래와 같이 메세지가 발송됩니다.\n\n{statements.alert_text if statements.alert_text else ''}", embed=embed, ephemeral=True, delete_after=15)
                 return
+
+    @_set_stream_alert.error
+    async def _set_stream_alert_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
+        print("오류 캐치")
+        print(error)
+        if isinstance(error, app_commands.MissingPermissions):
+            print("PPAP")
+            await interaction.response.send_message(content="이 명령어를 실행할 권한이 없는 것 같습니다.", ephemeral=True)
+
+    @_alert_disable.error
+    async def _alert_disable_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
+        if isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message(content="이 명령어를 실행할 권한이 없는 것 같습니다.", ephemeral=True)
+
+    @_alert_enable.error
+    async def _alert_enable_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
+        if isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message(content="이 명령어를 실행할 권한이 없는 것 같습니다.", ephemeral=True)
+
+    @_alert_info.error
+    async def _alert_info_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
+        if isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message(content="이 명령어를 실행할 권한이 없는 것 같습니다.", ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:
