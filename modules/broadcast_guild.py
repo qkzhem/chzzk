@@ -205,10 +205,8 @@ class BroadcastGuildAlert(commands.GroupCog, name="방송알림"):
 
     @_set_stream_alert.error
     async def _set_stream_alert_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
-        print("오류 캐치")
         print(error)
         if isinstance(error, app_commands.MissingPermissions):
-            print("PPAP")
             await interaction.response.send_message(content="이 명령어를 실행할 권한이 없는 것 같습니다.", ephemeral=True)
 
     @_alert_disable.error
